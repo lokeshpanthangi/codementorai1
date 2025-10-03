@@ -38,4 +38,16 @@ async def get_submissions_collection():
 
 async def get_user_progress_collection():
     database = await get_database()
-    return database.user_progress
+    return database.userprogress
+
+async def get_categories_collection():
+    database = await get_database()
+    return database.categories
+
+async def get_ai_chat_history_collection():
+    database = await get_database()
+    return database.aichathistory
+
+async def get_daily_challenges_collection():
+    database = await get_database()
+    return database.dailychallenges

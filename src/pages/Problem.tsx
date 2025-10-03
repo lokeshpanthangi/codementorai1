@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { submitCode, runTestCases, checkJudge0Status, STATUS_DESCRIPTIONS } from "@/services/judge0Service";
+import { problemsAPI, testCasesAPI, submissionsAPI, ProblemDetail, TestCase } from "@/services/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -49,9 +50,16 @@ import {
 import MonacoEditor from "@/components/MonacoEditor";
 
 const Problem = () => {
-  const { id } = useParams();
+  const { id } = useParams(); // id is the problem slug
+  
+  // API Data States
+  const [problemData, setProblemData] = useState<ProblemDetail | null>(null);
+  const [testCases, setTestCases] = useState<TestCase[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
   const [showResults, setShowResults] = useState(false);
-  const [language, setLanguage] = useState("python");
+  const [language, setLanguage] = useState("python3");
   const [selectedTestCase, setSelectedTestCase] = useState<number | null>(null);
   const [isBottomPanelCollapsed, setIsBottomPanelCollapsed] = useState(true); // Collapsed by default
   const [isAiInsightsPanelVisible, setIsAiInsightsPanelVisible] = useState(false); // Hidden by default
@@ -77,34 +85,68 @@ const Problem = () => {
   const editorRef = useRef<any>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   
-  const [code, setCode] = useState(`# Two Sum Problem
-def twoSum(nums, target):
-    # Write your solution here
-    pass`);
+  const [code, setCode] = useState('');
 
-  // Language templates for different languages
+  // Fetch problem data and test cases from API
+  useEffect(() => {
+    const fetchProblemData = async () => {
+      if (!id) return;
+      
+      try {
+        setLoading(true);
+        setError(null);
+        
+        // Fetch problem details
+        const problem = await problemsAPI.getProblemBySlug(id);
+        setProblemData(problem);
+        
+        // Fetch test cases
+        const cases = await testCasesAPI.getVisibleTestCases(problem.problem_number);
+        setTestCases(cases);
+        
+        // Set initial code from solution templates
+        const template = problem.solution_templates[language] || 
+                        problem.solution_templates['python3'] || 
+                        `# Write your solution here\npass`;
+        setCode(template);
+        
+        toast.success('Problem loaded successfully');
+      } catch (err) {
+        console.error('Error fetching problem:', err);
+        setError('Failed to load problem. Please try again.');
+        toast.error('Failed to load problem');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProblemData();
+  }, [id]);
+
+  // Update code when language changes
+  useEffect(() => {
+    if (problemData && problemData.solution_templates[language]) {
+      setCode(problemData.solution_templates[language]);
+    }
+  }, [language, problemData]);
+
+  // Language templates for different languages (fallback if API doesn't provide)
   const languageTemplates: Record<string, string> = {
-    python: `# Two Sum Problem
-def twoSum(nums, target):
-    # Write your solution here
+    python3: `# Write your solution here
+def solution():
     pass`,
-    javascript: `// Two Sum Problem
-function twoSum(nums, target) {
-    // Write your solution here
+    javascript: `// Write your solution here
+function solution() {
 }`,
-    typescript: `// Two Sum Problem
-function twoSum(nums: number[], target: number): number[] {
-    // Write your solution here
-    return [];
+    typescript: `// Write your solution here
+function solution(): void {
 }`,
-    java: `// Two Sum Problem
+    java: `// Write your solution here
 class Solution {
-    public int[] twoSum(int[] nums, int target) {
-        // Write your solution here
-        return new int[]{};
+    public void solution() {
     }
 }`,
-    cpp: `// Two Sum Problem
+    cpp: `// Write your solution here
 #include <vector>
 using namespace std;
 
@@ -400,9 +442,9 @@ end`,
   ];
 
   const handleRun = async () => {
-    if (!isJudge0Available) {
-      toast.error("Compiler not running", {
-        description: "Please start Judge0: docker-compose up -d"
+    if (!problemData) {
+      toast.error("Problem not loaded", {
+        description: "Please wait for the problem to load"
       });
       return;
     }
@@ -410,15 +452,27 @@ end`,
     setIsRunning(true);
     setShowResults(true);
     setIsBottomPanelCollapsed(false);
-    setSelectedTestCase(1); // Auto-select first test case
+    setSelectedTestCase(testCases[0]?.test_case_number || 1); // Auto-select first test case
 
     try {
-      // Run code with all visible test cases
-      const results = await runTestCases(code, language, visibleTestCases);
+      // Call backend API to run code
+      const result = await submissionsAPI.runCode(problemData.problem_number, language, code);
+      
+      // Convert API response to local format
+      const results = result.test_results.map(tr => ({
+        testCase: tr.test_case_number,
+        passed: tr.passed,
+        stdout: tr.user_output || tr.stdout || "",
+        stderr: tr.stderr || "",
+        time: (tr.runtime_ms / 1000).toFixed(4), // Convert ms to seconds
+        memory: tr.memory_kb,
+        compile_output: ""
+      }));
+      
       setTestResults(results);
 
-      const passedCount = results.filter(r => r.passed).length;
-      const totalCount = results.length;
+      const passedCount = result.summary.passed_tests;
+      const totalCount = result.summary.total_tests;
 
       if (passedCount === totalCount) {
         toast.success("All visible test cases passed! ✓", {
@@ -431,7 +485,7 @@ end`,
       }
     } catch (error: any) {
       toast.error("Execution failed", {
-        description: error.message
+        description: error.response?.data?.detail || error.message
       });
       setTestResults([]);
     } finally {
@@ -440,9 +494,9 @@ end`,
   };
 
   const handleSubmit = async () => {
-    if (!isJudge0Available) {
-      toast.error("Compiler not running", {
-        description: "Please start Judge0: docker-compose up -d"
+    if (!problemData) {
+      toast.error("Problem not loaded", {
+        description: "Please wait for the problem to load"
       });
       return;
     }
@@ -452,45 +506,53 @@ end`,
     setIsBottomPanelCollapsed(false);
 
     try {
-      // Run all hidden test cases (not shown to user)
-      const results = await runTestCases(code, language, hiddenTestCases);
+      // Call backend API to submit code
+      const result = await submissionsAPI.submitCode(problemData.problem_number, language, code);
+      
+      // Convert API response to local format
+      const results = result.test_results.map(tr => ({
+        testCase: tr.test_case_number,
+        passed: tr.passed,
+        stdout: tr.user_output || tr.stdout || "",
+        stderr: tr.stderr || "",
+        time: (tr.runtime_ms / 1000).toFixed(4), // Convert ms to seconds
+        memory: tr.memory_kb,
+        compile_output: ""
+      }));
+      
       setTestResults(results);
 
-      const passedCount = results.filter(r => r.passed).length;
-      const totalCount = results.length;
-
-      // Calculate complexity metrics
-      const avgTime = results.reduce((sum, r) => sum + (parseFloat(r.time) || 0), 0) / results.length;
-      const avgMemory = results.reduce((sum, r) => sum + (r.memory || 0), 0) / results.length;
+      const passedCount = result.summary.passed_tests;
+      const totalCount = result.summary.total_tests;
 
       // Store submission result with complexity analysis
       setSubmissionResult({
         passedCount,
         totalCount,
         results,
-        avgTime: avgTime.toFixed(4),
-        avgMemory: (avgMemory / 1024).toFixed(2), // Convert to MB
+        avgTime: (result.summary.avg_runtime_ms / 1000).toFixed(4),
+        avgMemory: (result.summary.avg_memory_kb / 1024).toFixed(2),
         timeComplexity: "O(n)", // This would be analyzed from code
         spaceComplexity: "O(1)", // This would be analyzed from code
         timestamp: new Date(),
-        status: passedCount === totalCount ? "Accepted" : "Wrong Answer"
+        status: result.status
       });
 
       // Switch to Result tab
       setActiveTab("result");
 
       if (passedCount === totalCount) {
-        toast.success("Accepted! All hidden test cases passed! 🎉", {
-          description: `${passedCount}/${totalCount} hidden test cases passed`
+        toast.success("Accepted! All test cases passed! 🎉", {
+          description: `${passedCount}/${totalCount} test cases passed`
         });
       } else {
         toast.error(`Wrong Answer`, {
-          description: `${passedCount}/${totalCount} hidden test cases passed`
+          description: `${passedCount}/${totalCount} test cases passed`
         });
       }
     } catch (error: any) {
       toast.error("Submission failed", {
-        description: error.message
+        description: error.response?.data?.detail || error.message
       });
     } finally {
       setIsSubmitting(false);
@@ -553,93 +615,101 @@ end`,
               {/* Scrollable Content */}
               <TabsContent value="description" className="mt-0">
                 <div className="custom-scrollbar" style={{ height: "calc(100vh - 122px)", overflowY: "auto" }}>
+                  {loading ? (
+                    <div className="p-8 flex items-center justify-center">
+                      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                      <span className="ml-3">Loading problem...</span>
+                    </div>
+                  ) : error ? (
+                    <div className="p-8 text-center">
+                      <p className="text-red-500 mb-4">{error}</p>
+                      <Button onClick={() => window.location.reload()}>Retry</Button>
+                    </div>
+                  ) : problemData ? (
                   <div className="p-4 space-y-6">
                 <div>
-                  <h1 className="text-3xl font-bold mb-4">2. Add Two Numbers</h1>
+                  <h1 className="text-3xl font-bold mb-4">
+                    {problemData.problem_number}. {problemData.title}
+                  </h1>
                   <div className="flex flex-wrap gap-2 mb-4">
-                    <Badge className="bg-yellow-500/10 text-yellow-500 border-yellow-500/20">
-                      Medium
+                    <Badge className={
+                      problemData.difficulty === 'Easy' ? 'bg-green-500/10 text-green-500 border-green-500/20' :
+                      problemData.difficulty === 'Medium' ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20' :
+                      'bg-red-500/10 text-red-500 border-red-500/20'
+                    }>
+                      {problemData.difficulty}
                     </Badge>
-                    <Badge variant="outline">Linked List</Badge>
-                    <Badge variant="outline">Math</Badge>
-                    <Badge variant="outline">Recursion</Badge>
+                    {problemData.topics.map((topic) => (
+                      <Badge key={topic} variant="outline">{topic}</Badge>
+                    ))}
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <Badge variant="secondary" className="text-xs">
-                      Amazon
-                    </Badge>
-                    <Badge variant="secondary" className="text-xs">
-                      Microsoft
-                    </Badge>
-                    <Badge variant="secondary" className="text-xs">
-                      Google
-                    </Badge>
+                    {problemData.companies.map((company) => (
+                      <Badge key={company} variant="secondary" className="text-xs">
+                        {company}
+                      </Badge>
+                    ))}
                   </div>
                 </div>
 
                 <Separator />
 
                 <div className="space-y-4">
-                  <p className="text-foreground leading-relaxed">
-                    You are given two <strong>non-empty</strong> linked lists
-                    representing two non-negative integers. The digits are stored in{" "}
-                    <strong>reverse order</strong>, and each of their nodes contains a
-                    single digit. Add the two numbers and return the sum as a linked
-                    list.
-                  </p>
-                  <p className="text-foreground leading-relaxed">
-                    You may assume the two numbers do not contain any leading zero,
-                    except the number 0 itself.
-                  </p>
+                  <div 
+                    className="text-foreground leading-relaxed prose prose-invert max-w-none"
+                    dangerouslySetInnerHTML={{ __html: problemData.description.problem_statement.replace(/\n/g, '<br/>') }}
+                  />
                 </div>
 
                 <div className="space-y-4">
-                  <h3 className="text-xl font-bold">Example 1:</h3>
-                  <div className="p-4 rounded-lg bg-muted/30 border border-border/50">
-                    <div className="mb-4 p-4 bg-card/50 rounded">
-                      <pre className="text-sm">
-                        <code>
-                          l1: 2 → 4 → 3{"\n"}
-                          l2: 5 → 6 → 4{"\n"}
-                          {"\n"}
-                          Output: 7 → 0 → 8{"\n"}
-                          Explanation: 342 + 465 = 807
-                        </code>
-                      </pre>
+                  {problemData.description.examples.map((example, idx) => (
+                    <div key={idx}>
+                      <h3 className="text-xl font-bold">Example {idx + 1}:</h3>
+                      <div className="p-4 rounded-lg bg-muted/30 border border-border/50 space-y-2">
+                        <p className="text-sm">
+                          <strong>Input:</strong> {example.input}
+                        </p>
+                        <p className="text-sm">
+                          <strong>Output:</strong> {example.output}
+                        </p>
+                        {example.explanation && (
+                          <p className="text-sm text-muted-foreground">
+                            <strong>Explanation:</strong> {example.explanation}
+                          </p>
+                        )}
+                      </div>
                     </div>
-                    <p className="text-sm">
-                      <strong>Input:</strong> l1 = [2,4,3], l2 = [5,6,4]
-                    </p>
-                    <p className="text-sm">
-                      <strong>Output:</strong> [7,0,8]
-                    </p>
-                  </div>
-
-                  <h3 className="text-xl font-bold">Example 2:</h3>
-                  <div className="p-4 rounded-lg bg-muted/30 border border-border/50">
-                    <p className="text-sm">
-                      <strong>Input:</strong> l1 = [0], l2 = [0]
-                    </p>
-                    <p className="text-sm">
-                      <strong>Output:</strong> [0]
-                    </p>
-                  </div>
+                  ))}
                 </div>
 
                 <div className="space-y-4">
                   <h3 className="text-xl font-bold">Constraints:</h3>
                   <ul className="list-disc list-inside space-y-2 text-muted-foreground">
-                    <li>
-                      The number of nodes in each linked list is in the range [1, 100].
-                    </li>
-                    <li>0 ≤ Node.val ≤ 9</li>
-                    <li>
-                      It is guaranteed that the list represents a number that does not
-                      have leading zeros.
-                    </li>
+                    {problemData.description.constraints.map((constraint, idx) => (
+                      <li key={idx}>{constraint}</li>
+                    ))}
                   </ul>
                 </div>
+
+                {problemData.hints && problemData.hints.length > 0 && (
+                  <div className="space-y-4">
+                    <h3 className="text-xl font-bold flex items-center gap-2">
+                      <Lightbulb className="h-5 w-5 text-yellow-500" />
+                      Hints:
+                    </h3>
+                    <div className="space-y-2">
+                      {problemData.hints.map((hint, idx) => (
+                        <div key={idx} className="p-3 rounded-lg bg-muted/30 border border-border/50">
+                          <p className="text-sm text-muted-foreground">
+                            {idx + 1}. {hint}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
                   </div>
+                )}
+                  </div>
+                  ) : null}
                 </div>
               </TabsContent>
 
@@ -973,21 +1043,21 @@ end`,
 
                   <TabsContent value="testcase" className="flex-1 p-3 custom-scrollbar overflow-y-auto m-0">
                     <div className="space-y-4">
-                      <div className="flex gap-2">
-                        {[1, 2, 3].map((caseNum) => {
-                          const result = testResults.find(r => r.testCase === caseNum);
+                      <div className="flex gap-2 flex-wrap">
+                        {testCases.map((testCase) => {
+                          const result = testResults.find(r => r.testCase === testCase.test_case_number);
                           const isPassed = result?.passed;
                           const hasFailed = result && !result.passed;
                           
                           return (
                             <Button 
-                              key={caseNum}
+                              key={testCase.id}
                               variant="outline" 
                               size="sm" 
-                              className={`relative ${selectedTestCase === caseNum ? "bg-primary/10 border-primary/30" : ""}`}
-                              onClick={() => setSelectedTestCase(selectedTestCase === caseNum ? null : caseNum)}
+                              className={`relative ${selectedTestCase === testCase.test_case_number ? "bg-primary/10 border-primary/30" : ""}`}
+                              onClick={() => setSelectedTestCase(selectedTestCase === testCase.test_case_number ? null : testCase.test_case_number)}
                             >
-                              Case {caseNum}
+                              Case {testCase.test_case_number}
                               {isPassed && (
                                 <span className="ml-2 text-green-500">✓</span>
                               )}
@@ -1005,49 +1075,51 @@ end`,
                           Click on a test case to view details
                         </div>
                       ) : (
-                        <div className="space-y-4">
-                          {/* Input */}
-                          <div>
-                            <p className="text-sm font-medium text-muted-foreground mb-2">Input:</p>
-                            <div className="space-y-2">
+                        (() => {
+                          const currentCase = testCases.find(tc => tc.test_case_number === selectedTestCase);
+                          if (!currentCase) return null;
+
+                          return (
+                            <div className="space-y-4">
+                              {/* Input */}
                               <div>
-                                <p className="text-xs text-muted-foreground mb-1">nums =</p>
-                                <code className="block p-2 rounded bg-muted/50 text-sm">
-                                  {selectedTestCase === 1 ? "[2,7,11,15]" : selectedTestCase === 2 ? "[3,2,4]" : "[3,3]"}
+                                <p className="text-sm font-medium text-muted-foreground mb-2">Input:</p>
+                                <code className="block p-3 rounded bg-muted/50 text-sm whitespace-pre-wrap">
+                                  {currentCase.input_string}
                                 </code>
                               </div>
+
+                              {/* Expected Output */}
                               <div>
-                                <p className="text-xs text-muted-foreground mb-1">target =</p>
-                                <code className="block p-2 rounded bg-muted/50 text-sm">
-                                  {selectedTestCase === 1 ? "9" : selectedTestCase === 2 ? "6" : "6"}
+                                <p className="text-sm font-medium text-muted-foreground mb-1">Expected Output:</p>
+                                <code className="block p-3 rounded bg-muted/50 text-sm">
+                                  {currentCase.expected_output_string}
                                 </code>
                               </div>
-                            </div>
-                          </div>
 
-                          {/* Expected Output */}
-                          <div>
-                            <p className="text-sm font-medium text-muted-foreground mb-1">Expected Output:</p>
-                            <code className="block p-2 rounded bg-muted/50 text-sm">
-                              {selectedTestCase === 1 ? "[0,1]" : selectedTestCase === 2 ? "[1,2]" : "[0,1]"}
-                            </code>
-                          </div>
+                              {/* Explanation if available */}
+                              {currentCase.explanation && (
+                                <div>
+                                  <p className="text-sm font-medium text-muted-foreground mb-1">Explanation:</p>
+                                  <p className="text-sm text-muted-foreground">{currentCase.explanation}</p>
+                                </div>
+                              )}
 
-                          {/* Actual Output (if test has been run) */}
-                          {testResults.length > 0 && testResults.find(r => r.testCase === selectedTestCase) && (
-                            <>
-                              <Separator />
-                              {(() => {
-                                const result = testResults.find(r => r.testCase === selectedTestCase);
-                                if (!result) return null;
+                              {/* Actual Output (if test has been run) */}
+                              {testResults.length > 0 && testResults.find(r => r.testCase === selectedTestCase) && (
+                                <>
+                                  <Separator />
+                                  {(() => {
+                                    const result = testResults.find(r => r.testCase === selectedTestCase);
+                                    if (!result) return null;
 
-                                return (
-                                  <div className="space-y-3">
-                                    <div className="flex items-center gap-2">
-                                      <Badge 
-                                        className={
-                                          result.passed
-                                            ? "bg-green-500/10 text-green-500 border-green-500/20"
+                                    return (
+                                      <div className="space-y-3">
+                                        <div className="flex items-center gap-2">
+                                          <Badge 
+                                            className={
+                                              result.passed
+                                                ? "bg-green-500/10 text-green-500 border-green-500/20"
                                             : "bg-red-500/10 text-red-500 border-red-500/20"
                                         }
                                       >
@@ -1103,11 +1175,13 @@ end`,
                                       )}
                                     </div>
                                   </div>
-                                );
-                              })()}
-                            </>
-                          )}
-                        </div>
+                                    );
+                                  })()}
+                                </>
+                              )}
+                            </div>
+                          );
+                        })()
                       )}
                     </div>
                   </TabsContent>

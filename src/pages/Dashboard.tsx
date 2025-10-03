@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +13,7 @@ import {
   Trophy,
   Target,
   Zap,
+  Loader2,
 } from "lucide-react";
 import { 
   AreaChart, 
@@ -23,55 +25,52 @@ import {
   ResponsiveContainer,
   Legend 
 } from "recharts";
+import { dailyChallengeAPI, categoriesAPI, problemsAPI, Category, DailyChallenge, Problem } from "@/services/api";
+import { useToast } from "@/hooks/use-toast";
 
 const Dashboard = () => {
+  const { toast } = useToast();
+  const [dailyChallenge, setDailyChallenge] = useState<DailyChallenge | null>(null);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [recommendedProblems, setRecommendedProblems] = useState<Problem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      try {
+        setLoading(true);
+        const [challenge, cats, allProblems] = await Promise.all([
+          dailyChallengeAPI.getTodayChallenge(),
+          categoriesAPI.getAllCategories(),
+          problemsAPI.getAllProblems()
+        ]);
+        setDailyChallenge(challenge);
+        setCategories(cats);
+        // Get first 4 problems as recommended (you can add filtering logic here)
+        setRecommendedProblems(allProblems.slice(0, 4));
+        setError(null);
+      } catch (err: any) {
+        const errorMsg = err.response?.data?.detail || err.message || "Failed to load dashboard data";
+        setError(errorMsg);
+        toast({
+          title: "Error loading dashboard",
+          description: errorMsg,
+          variant: "destructive",
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDashboardData();
+  }, []);
+
   const progressData = [
     { month: "Jan", easy: 12, medium: 8, hard: 3 },
     { month: "Feb", easy: 15, medium: 10, hard: 4 },
     { month: "Mar", easy: 18, medium: 14, hard: 6 },
     { month: "Apr", easy: 20, medium: 18, hard: 9 },
-  ];
-
-  const recentActivity = [
-    {
-      name: "Two Sum",
-      difficulty: "Easy",
-      status: "Solved",
-      time: "2 hours ago",
-    },
-    {
-      name: "Longest Substring",
-      difficulty: "Medium",
-      status: "Attempted",
-      time: "5 hours ago",
-    },
-    {
-      name: "Binary Tree Traversal",
-      difficulty: "Medium",
-      status: "Solved",
-      time: "1 day ago",
-    },
-    {
-      name: "Merge K Sorted Lists",
-      difficulty: "Hard",
-      status: "Attempted",
-      time: "2 days ago",
-    },
-    {
-      name: "Valid Parentheses",
-      difficulty: "Easy",
-      status: "Solved",
-      time: "3 days ago",
-    },
-  ];
-
-  const categories = [
-    { name: "Array", count: 2011 },
-    { name: "String", count: 814 },
-    { name: "Hash Table", count: 735 },
-    { name: "Dynamic Programming", count: 618 },
-    { name: "Math", count: 618 },
-    { name: "Sorting", count: 478 },
   ];
 
   const getDifficultyColor = (difficulty: string) => {
@@ -181,118 +180,91 @@ const Dashboard = () => {
               <p className="text-sm text-muted-foreground mt-1">Based on your solving patterns</p>
             </CardHeader>
             <CardContent className="space-y-4">
-              {[
-                {
-                  id: "15",
-                  title: "3Sum",
-                  difficulty: "Medium",
-                  reason: "You solved 5 Array problems - try this Medium array challenge",
-                  match: 92,
-                  tags: ["Array", "Two Pointers", "Sorting"],
-                  acceptance: 32.8,
-                  frequency: "High",
-                },
-                {
-                  id: "322",
-                  title: "Coin Change",
-                  difficulty: "Medium",
-                  reason: "Strengthen your Dynamic Programming skills",
-                  match: 85,
-                  tags: ["Dynamic Programming", "BFS"],
-                  acceptance: 43.2,
-                  frequency: "Very High",
-                },
-                {
-                  id: "102",
-                  title: "Binary Tree Level Order",
-                  difficulty: "Medium",
-                  reason: "Next step after solving Binary Tree Traversal",
-                  match: 88,
-                  tags: ["Tree", "BFS", "Binary Tree"],
-                  acceptance: 65.1,
-                  frequency: "High",
-                },
-                {
-                  id: "146",
-                  title: "LRU Cache",
-                  difficulty: "Medium",
-                  reason: "Popular problem you haven't attempted yet",
-                  match: 78,
-                  tags: ["Hash Table", "Linked List", "Design"],
-                  acceptance: 42.3,
-                  frequency: "Very High",
-                },
-              ].map((problem, index) => (
-                <Link
-                  key={problem.id}
-                  to={`/problem/${problem.id}`}
-                  className="block group"
-                  style={{ animationDelay: `${index * 100}ms` }}
-                >
-                  <div className="p-4 rounded-lg bg-card/30 hover:bg-card/60 border border-border/40 hover:border-primary/40 transition-all duration-300">
-                    {/* Top Row: Title and Stats */}
-                    <div className="flex items-start justify-between gap-4 mb-3">
-                      <div className="flex items-center gap-3 flex-1 min-w-0">
-                        {/* Problem Number */}
-                        <span className="text-xs font-mono text-muted-foreground whitespace-nowrap">
-                          #{problem.id}
-                        </span>
-                        
-                        {/* Title */}
-                        <h3 className="font-semibold text-base group-hover:text-primary transition-colors truncate">
-                          {problem.title}
-                        </h3>
-                        
-                        {/* Difficulty Badge */}
-                        <Badge 
-                          className={`${getDifficultyColor(problem.difficulty)} text-xs whitespace-nowrap`}
-                        >
-                          {problem.difficulty}
-                        </Badge>
-                      </div>
+              {loading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                </div>
+              ) : recommendedProblems.length > 0 ? (
+                recommendedProblems.map((problem, index) => (
+                  <Link
+                    key={problem.id}
+                    to={`/problem/${problem.slug}`}
+                    className="block group"
+                    style={{ animationDelay: `${index * 100}ms` }}
+                  >
+                    <div className="p-4 rounded-lg bg-card/30 hover:bg-card/60 border border-border/40 hover:border-primary/40 transition-all duration-300">
+                      {/* Top Row: Title and Stats */}
+                      <div className="flex items-start justify-between gap-4 mb-3">
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          {/* Problem Number */}
+                          <span className="text-xs font-mono text-muted-foreground whitespace-nowrap">
+                            #{problem.problem_number}
+                          </span>
+                          
+                          {/* Title */}
+                          <h3 className="font-semibold text-base group-hover:text-primary transition-colors truncate">
+                            {problem.title}
+                          </h3>
+                          
+                          {/* Difficulty Badge */}
+                          <Badge 
+                            className={`${getDifficultyColor(problem.difficulty)} text-xs whitespace-nowrap`}
+                          >
+                            {problem.difficulty}
+                          </Badge>
+                        </div>
 
-                      {/* Match Score */}
-                      <div className="flex items-center gap-2 whitespace-nowrap">
-                        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 border border-primary/20">
-                          <Sparkles className="h-3 w-3 text-primary" />
-                          <span className="text-xs font-medium text-primary">{problem.match}%</span>
+                        {/* Acceptance Rate */}
+                        <div className="flex items-center gap-2 whitespace-nowrap">
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 border border-primary/20">
+                            <Sparkles className="h-3 w-3 text-primary" />
+                            <span className="text-xs font-medium text-primary">{problem.acceptance_rate.toFixed(1)}%</span>
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    {/* Reason */}
-                    <p className="text-sm text-muted-foreground mb-3 pl-8">
-                      {problem.reason}
-                    </p>
+                      {/* Category */}
+                      <p className="text-sm text-muted-foreground mb-3 pl-8">
+                        Category: {problem.category}
+                      </p>
 
-                    {/* Tags Row */}
-                    <div className="flex items-center gap-2 flex-wrap pl-8">
-                      {/* Topic Tags */}
-                      {problem.tags.map((tag) => (
-                        <span
-                          key={tag}
-                          className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-primary/5 text-primary/90 border border-primary/10 hover:bg-primary/10 hover:border-primary/20 transition-colors cursor-pointer"
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                      
-                      {/* Divider */}
-                      <span className="text-muted-foreground/30">•</span>
-                      
-                      {/* Frequency Tag */}
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-card text-muted-foreground border border-border/50">
-                        {problem.frequency}
-                      </span>
-                      
-                      {/* Acceptance Tag */}
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-card text-muted-foreground border border-border/50">
-                        {problem.acceptance}% accepted
-                      </span>
+                      {/* Tags Row */}
+                      <div className="flex items-center gap-2 flex-wrap pl-8">
+                        {/* Topic Tags */}
+                        {problem.topics.slice(0, 3).map((tag) => (
+                          <span
+                            key={tag}
+                            className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-primary/5 text-primary/90 border border-primary/10 hover:bg-primary/10 hover:border-primary/20 transition-colors cursor-pointer"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                        
+                        {/* Divider */}
+                        {problem.companies.length > 0 && (
+                          <>
+                            <span className="text-muted-foreground/30">•</span>
+                            
+                            {/* Company Tags */}
+                            {problem.companies.slice(0, 2).map((company) => (
+                              <span 
+                                key={company}
+                                className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-card text-muted-foreground border border-border/50"
+                              >
+                                {company}
+                              </span>
+                            ))}
+                          </>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                </Link>
-              ))}
+                  </Link>
+                ))
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  No problems available
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -383,18 +355,38 @@ const Dashboard = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="p-4 rounded-lg bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/20 hover:border-primary/40 transition-all duration-300 hover:shadow-lg hover:shadow-primary/20 group">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-base font-bold group-hover:text-primary transition-colors">Problem of the Day</h3>
-                    <Badge className="bg-yellow-500/10 text-yellow-500 border-yellow-500/20 text-xs">
-                      Medium
-                    </Badge>
+                {loading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
                   </div>
-                  <p className="text-sm text-muted-foreground mb-3 group-hover:text-foreground transition-colors">Longest Palindromic Substring</p>
-                  <Button variant="hero" className="w-full group-hover:scale-[1.02] transition-transform" size="sm">
-                    Start Solving
-                  </Button>
-                </div>
+                ) : dailyChallenge ? (
+                  <div className="p-4 rounded-lg bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/20 hover:border-primary/40 transition-all duration-300 hover:shadow-lg hover:shadow-primary/20 group">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-base font-bold group-hover:text-primary transition-colors">Problem of the Day</h3>
+                      <Badge className={
+                        dailyChallenge.problem.difficulty === "Easy"
+                          ? "bg-green-500/10 text-green-500 border-green-500/20"
+                          : dailyChallenge.problem.difficulty === "Medium"
+                          ? "bg-yellow-500/10 text-yellow-500 border-yellow-500/20"
+                          : "bg-red-500/10 text-red-500 border-red-500/20"
+                      }>
+                        {dailyChallenge.problem.difficulty}
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground mb-3 group-hover:text-foreground transition-colors">
+                      {dailyChallenge.problem.title}
+                    </p>
+                    <Link to={`/problem/${dailyChallenge.problem.slug}`}>
+                      <Button variant="hero" className="w-full group-hover:scale-[1.02] transition-transform" size="sm">
+                        Start Solving
+                      </Button>
+                    </Link>
+                  </div>
+                ) : (
+                  <div className="p-4 rounded-lg bg-muted/50 text-center">
+                    <p className="text-sm text-muted-foreground">No daily challenge available</p>
+                  </div>
+                )}
 
                 <Button variant="outline" className="w-full hover:border-primary/40 hover:bg-primary/5 transition-all duration-300" size="sm">
                   <Trophy className="mr-2 h-4 w-4" />
@@ -420,45 +412,6 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Recent Activity */}
-        <Card className="glass-effect">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Clock className="h-5 w-5 text-primary" />
-              Recent Activity
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {recentActivity.map((activity, index) => (
-                <div
-                  key={index}
-                  className="flex items-center justify-between p-4 rounded-lg bg-card/50 hover:bg-card transition-colors"
-                >
-                  <div className="flex items-center gap-4 flex-1">
-                    <div className="flex-1">
-                      <h4 className="font-medium">{activity.name}</h4>
-                      <p className="text-sm text-muted-foreground">{activity.time}</p>
-                    </div>
-                    <Badge className={getDifficultyColor(activity.difficulty)}>
-                      {activity.difficulty}
-                    </Badge>
-                    <Badge
-                      variant={activity.status === "Solved" ? "default" : "secondary"}
-                      className={activity.status === "Solved" ? "bg-primary" : ""}
-                    >
-                      {activity.status}
-                    </Badge>
-                  </div>
-                  <Button variant="ghost" size="sm">
-                    {activity.status === "Solved" ? "Review" : "Continue"}
-                  </Button>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
         {/* Categories */}
         <div>
           <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
@@ -466,26 +419,40 @@ const Dashboard = () => {
             Browse by Category
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {categories.map((category) => (
-              <Card
-                key={category.name}
-                className="glass-effect hover:shadow-lg transition-all duration-300 hover:-translate-y-1 cursor-pointer group"
-              >
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-lg font-bold group-hover:text-primary transition-colors">
-                        {category.name}
-                      </h3>
-                      <p className="text-sm text-muted-foreground">{category.count} problems</p>
-                    </div>
-                    <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary group-hover:text-primary-foreground transition-all">
-                      <Code2 className="h-5 w-5" />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+            {loading ? (
+              <div className="col-span-full flex items-center justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : categories.length > 0 ? (
+              categories.map((category) => (
+                <Link key={category.id} to={`/problems?category=${category.slug}`}>
+                  <Card className="glass-effect hover:shadow-lg transition-all duration-300 hover:-translate-y-1 cursor-pointer group">
+                    <CardContent className="p-6">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="text-2xl">{category.icon}</span>
+                            <h3 className="text-lg font-bold group-hover:text-primary transition-colors">
+                              {category.name}
+                            </h3>
+                          </div>
+                          <p className="text-sm text-muted-foreground">{category.problem_count} problems</p>
+                          <div className="flex gap-2 mt-2 text-xs">
+                            <span className="text-green-500">{category.difficulty_distribution.easy} Easy</span>
+                            <span className="text-yellow-500">{category.difficulty_distribution.medium} Med</span>
+                            <span className="text-red-500">{category.difficulty_distribution.hard} Hard</span>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              ))
+            ) : (
+              <div className="col-span-full text-center py-8 text-muted-foreground">
+                No categories available
+              </div>
+            )}
           </div>
         </div>
       </main>

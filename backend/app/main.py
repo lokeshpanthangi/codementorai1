@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import connect_to_mongo, close_mongo_connection
-from app.routes import auth_routes, problem_routes, testcase_routes, submission_routes
+from app.routes import auth_routes, problem_routes, testcase_routes, submission_routes, category_routes, daily_challenge_routes
 
 # Create FastAPI app
 app = FastAPI(
@@ -14,10 +14,11 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.allowed_origins_list,
+    allow_origins=["http://localhost:8080", "http://localhost:5173", "http://127.0.0.1:8080", "http://127.0.0.1:5173"],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # Event handlers
@@ -38,6 +39,8 @@ app.include_router(auth_routes.router)
 app.include_router(problem_routes.router)
 app.include_router(testcase_routes.router)
 app.include_router(submission_routes.router)
+app.include_router(category_routes.router)
+app.include_router(daily_challenge_routes.router)
 
 # Root endpoint
 @app.get("/")

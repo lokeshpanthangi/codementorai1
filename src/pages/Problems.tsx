@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,57 +19,50 @@ import {
   ChevronLeft,
   ChevronRight,
   RotateCcw,
+  Loader2,
 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
+import { problemsAPI, Problem } from "@/services/api";
 
 const Problems = () => {
   const [difficulty, setDifficulty] = useState("All");
   const [status, setStatus] = useState("All");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [problems, setProblems] = useState<Problem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const problems = [
-    {
-      id: 1,
-      title: "Two Sum",
-      acceptance: "56.4%",
-      difficulty: "Easy",
-      solved: true,
-    },
-    {
-      id: 2,
-      title: "Add Two Numbers",
-      acceptance: "47.0%",
-      difficulty: "Medium",
-      solved: true,
-    },
-    {
-      id: 3,
-      title: "Longest Substring Without Repeating Characters",
-      acceptance: "37.7%",
-      difficulty: "Medium",
-      solved: false,
-    },
-    {
-      id: 4,
-      title: "Median of Two Sorted Arrays",
-      acceptance: "44.8%",
-      difficulty: "Hard",
-      solved: true,
-    },
-    {
-      id: 5,
-      title: "Longest Palindromic Substring",
-      acceptance: "36.5%",
-      difficulty: "Medium",
-      solved: false,
-    },
-    {
-      id: 6,
-      title: "Zigzag Conversion",
-      acceptance: "52.5%",
-      difficulty: "Medium",
-      solved: false,
-    },
-  ];
+  // Fetch problems from API
+  useEffect(() => {
+    const fetchProblems = async () => {
+      try {
+        setLoading(true);
+        const data = await problemsAPI.getAllProblems();
+        setProblems(data);
+        setError(null);
+      } catch (err) {
+        console.error('Error fetching problems:', err);
+        setError('Failed to load problems. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProblems();
+  }, []);
+
+  // Filter problems based on search and filters
+  const filteredProblems = problems.filter((problem) => {
+    const matchesDifficulty = difficulty === "All" || problem.difficulty === difficulty;
+    const matchesSearch = problem.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         problem.topics.some(topic => topic.toLowerCase().includes(searchQuery.toLowerCase()));
+    return matchesDifficulty && matchesSearch;
+  });
+
+  // Calculate stats
+  const totalCount = problems.length;
+  const solvedCount = 0; // TODO: Get from user progress API
+  const progressPercentage = totalCount > 0 ? (solvedCount / totalCount) * 100 : 0;
 
   const getDifficultyColor = (difficulty: string) => {
     switch (difficulty) {
@@ -84,10 +77,6 @@ const Problems = () => {
     }
   };
 
-  const solvedCount = 216;
-  const totalCount = 3700;
-  const progressPercentage = (solvedCount / totalCount) * 100;
-
   return (
     <div className="min-h-screen">
       <Navbar isAuthenticated username="CodeMaster" />
@@ -100,6 +89,8 @@ const Problems = () => {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search questions"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-10 bg-background/50"
               />
             </div>
@@ -185,96 +176,107 @@ const Problems = () => {
           <Progress value={progressPercentage} className="h-2" />
         </div>
 
-        {/* Problems Table */}
-        <div className="glass-effect rounded-lg overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="border-b border-border/50">
-                <tr className="text-left">
-                  <th className="p-4 font-semibold text-sm text-muted-foreground w-20">
-                    Status
-                  </th>
-                  <th className="p-4 font-semibold text-sm text-muted-foreground">
-                    Title
-                  </th>
-                  <th className="p-4 font-semibold text-sm text-muted-foreground w-32">
-                    Acceptance
-                  </th>
-                  <th className="p-4 font-semibold text-sm text-muted-foreground w-32">
-                    Difficulty
-                  </th>
-                  <th className="p-4 font-semibold text-sm text-muted-foreground w-20">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {problems.map((problem, index) => (
-                  <tr
-                    key={problem.id}
-                    className="border-b border-border/30 hover:bg-card/50 transition-colors group"
-                  >
-                    <td className="p-4">
-                      {problem.solved ? (
-                        <CheckCircle2 className="h-5 w-5 text-primary" />
-                      ) : (
-                        <Circle className="h-5 w-5 text-muted-foreground" />
-                      )}
-                    </td>
-                    <td className="p-4">
-                      <Link
-                        to={`/problem/${problem.id}`}
-                        className="hover:text-primary transition-colors font-medium"
-                      >
-                        {index + 1}. {problem.title}
-                      </Link>
-                    </td>
-                    <td className="p-4 text-muted-foreground">
-                      {problem.acceptance}
-                    </td>
-                    <td className="p-4">
-                      <Badge className={getDifficultyColor(problem.difficulty)}>
-                        {problem.difficulty}
-                      </Badge>
-                    </td>
-                    <td className="p-4">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        <Star className="h-4 w-4" />
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        {/* Loading State */}
+        {loading && (
+          <div className="glass-effect rounded-lg p-12 flex items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <span className="ml-3 text-lg">Loading problems...</span>
           </div>
+        )}
 
-          {/* Pagination */}
-          <div className="flex items-center justify-center gap-2 p-6 border-t border-border/50">
-            <Button variant="outline" size="sm" disabled>
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button variant="default" size="sm">
-              1
-            </Button>
-            <Button variant="outline" size="sm">
-              2
-            </Button>
-            <Button variant="outline" size="sm">
-              3
-            </Button>
-            <span className="text-muted-foreground">...</span>
-            <Button variant="outline" size="sm">
-              50
-            </Button>
-            <Button variant="outline" size="sm">
-              <ChevronRight className="h-4 w-4" />
+        {/* Error State */}
+        {error && (
+          <div className="glass-effect rounded-lg p-8 text-center">
+            <p className="text-red-500 mb-4">{error}</p>
+            <Button onClick={() => window.location.reload()}>
+              <RotateCcw className="h-4 w-4 mr-2" />
+              Retry
             </Button>
           </div>
-        </div>
+        )}
+
+        {/* Problems Table */}
+        {!loading && !error && (
+          <div className="glass-effect rounded-lg overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="border-b border-border/50">
+                  <tr className="text-left">
+                    <th className="p-4 font-semibold text-sm text-muted-foreground w-20">
+                      #
+                    </th>
+                    <th className="p-4 font-semibold text-sm text-muted-foreground">
+                      Title
+                    </th>
+                    <th className="p-4 font-semibold text-sm text-muted-foreground">
+                      Topics
+                    </th>
+                    <th className="p-4 font-semibold text-sm text-muted-foreground w-32">
+                      Acceptance
+                    </th>
+                    <th className="p-4 font-semibold text-sm text-muted-foreground w-32">
+                      Difficulty
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredProblems.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="p-8 text-center text-muted-foreground">
+                        No problems found matching your filters.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredProblems.map((problem) => (
+                      <tr
+                        key={problem.id}
+                        className="border-b border-border/30 hover:bg-card/50 transition-colors group"
+                      >
+                        <td className="p-4 text-muted-foreground">
+                          {problem.problem_number}
+                        </td>
+                        <td className="p-4">
+                          <Link
+                            to={`/problem/${problem.slug}`}
+                            className="hover:text-primary transition-colors font-medium"
+                          >
+                            {problem.title}
+                          </Link>
+                        </td>
+                        <td className="p-4">
+                          <div className="flex gap-1 flex-wrap">
+                            {problem.topics.slice(0, 2).map((topic) => (
+                              <Badge
+                                key={topic}
+                                variant="outline"
+                                className="text-xs bg-primary/10 border-primary/20"
+                              >
+                                {topic}
+                              </Badge>
+                            ))}
+                            {problem.topics.length > 2 && (
+                              <Badge variant="outline" className="text-xs">
+                                +{problem.topics.length - 2}
+                              </Badge>
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-4 text-muted-foreground">
+                          {problem.acceptance_rate.toFixed(1)}%
+                        </td>
+                        <td className="p-4">
+                          <Badge className={getDifficultyColor(problem.difficulty)}>
+                            {problem.difficulty}
+                          </Badge>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

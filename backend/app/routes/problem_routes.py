@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status, Query
 from typing import List, Optional
-from app.models import ProblemResponse
+from app.models import ProblemResponse, ProblemDetail
 from app.database import get_problems_collection
 from bson import ObjectId
 
@@ -35,23 +35,18 @@ async def get_all_problems(
             title=problem["title"],
             slug=problem["slug"],
             difficulty=problem["difficulty"],
-            description=problem["description"],
-            examples=problem["examples"],
-            constraints=problem["constraints"],
-            topics=problem["topics"],
-            companies=problem["companies"],
-            hints=problem.get("hints", []),
-            solution_template=problem["solution_template"],
-            acceptance_rate=problem.get("acceptance_rate", 0.0),
-            total_submissions=problem.get("total_submissions", 0),
-            total_accepted=problem.get("total_accepted", 0)
+            category=problem.get("category", "General"),
+            topics=problem.get("topics", []),
+            companies=problem.get("companies", []),
+            acceptance_rate=problem.get("stats", {}).get("acceptance_rate", 0.0),
+            frequency=problem.get("frequency", {}).get("last_6_months", 0)
         )
         for problem in problems
     ]
 
-@router.get("/{problem_id}", response_model=ProblemResponse)
+@router.get("/{problem_id}", response_model=ProblemDetail)
 async def get_problem_by_id(problem_id: str):
-    """Get a specific problem by ID"""
+    """Get a specific problem by ID or slug"""
     problems_collection = await get_problems_collection()
     
     # Try to find by ObjectId or by slug
@@ -66,22 +61,24 @@ async def get_problem_by_id(problem_id: str):
             detail=f"Problem with id '{problem_id}' not found"
         )
     
-    return ProblemResponse(
+    return ProblemDetail(
         id=str(problem["_id"]),
         problem_number=problem["problem_number"],
         title=problem["title"],
         slug=problem["slug"],
         difficulty=problem["difficulty"],
-        description=problem["description"],
-        examples=problem["examples"],
-        constraints=problem["constraints"],
-        topics=problem["topics"],
-        companies=problem["companies"],
+        category=problem.get("category", "General"),
+        topics=problem.get("topics", []),
+        companies=problem.get("companies", []),
+        acceptance_rate=problem.get("stats", {}).get("acceptance_rate", 0.0),
+        frequency=problem.get("frequency", {}).get("last_6_months", 0),
+        description=problem.get("description", {"problem_statement": "", "examples": [], "constraints": []}),
         hints=problem.get("hints", []),
-        solution_template=problem["solution_template"],
-        acceptance_rate=problem.get("acceptance_rate", 0.0),
-        total_submissions=problem.get("total_submissions", 0),
-        total_accepted=problem.get("total_accepted", 0)
+        solution_templates=problem.get("solution_templates", {}),
+        stats=problem.get("stats", {}),
+        time_complexity=problem.get("time_complexity"),
+        space_complexity=problem.get("space_complexity"),
+        similar_problems=problem.get("similar_problems", [])
     )
 
 @router.get("/{problem_id}/stats")
